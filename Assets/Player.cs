@@ -103,4 +103,96 @@ public class Player : MonoBehaviour
     {
         GetComponent<Renderer>().material.color = stateColors[(int)m_nState];
     }
+
+        void Update()
+    {
+        // Read mouse input and update target angle/speed accordingly.
+        UpdateDirectionAndSpeed();
+
+        m_fTargetSpeed *= 60.0f;
+
+        // Update for dive state
+        CheckForDive();
+
+        switch (m_nState)
+        {
+            case eState.kMoveSlow:
+            {
+                // Ramp speed up/down
+                m_fSpeed = Mathf.MoveTowards(m_fSpeed, m_fTargetSpeed, m_fIncSpeed);
+
+                // Transition to fast if we're at or above the threshold and trying to go fast
+                if (m_fSpeed >= m_fSlowSpeed * 60.0f && Mathf.Approximately(m_fTargetSpeed, m_fMaxSpeed * 60.0f))
+                {
+                    m_nState = eState.kMoveFast;
+                }
+
+                // Can turn freely, but speed is limited
+                m_fAngle = m_fTargetAngle;
+                // Apply rotation and movement based on current angle and speed
+                transform.rotation = Quaternion.Euler(0.0f, 0.0f, m_fAngle);
+                transform.position += (-(transform.right)) * m_fSpeed * Time.deltaTime;
+                break;
+            }
+
+            case eState.kMoveFast:
+            {
+                // Can only turn within a small angle
+                float fDelta = Mathf.DeltaAngle(m_fAngle, m_fTargetAngle);
+
+                if (Mathf.Abs(fDelta) <= m_fFastRotateMax)
+                {
+                    // Limited turning while maintaining speed intent
+                    m_fAngle = Mathf.MoveTowardsAngle(m_fAngle, m_fTargetAngle, m_fFastRotateSpeed);
+                    m_fSpeed = Mathf.MoveTowards(m_fSpeed, m_fTargetSpeed, m_fIncSpeed);
+                }
+                else
+                {
+                    // Outside turn range keep direction, but slow down
+                    m_fSpeed = Mathf.MoveTowards(m_fSpeed, 0.0f, m_fIncSpeed);
+                    
+                    // Drop back to slow state immediately when we can't turn
+                    m_nState = eState.kMoveSlow;
+                }
+
+                // If we drop below threshold, revert to slow
+                if (m_fSpeed < m_fSlowSpeed * 60.0f)
+                {
+                    m_nState = eState.kMoveSlow;
+                }
+
+                transform.rotation = Quaternion.Euler(0.0f, 0.0f, m_fAngle);
+                transform.position += (-(transform.right)) * m_fSpeed * Time.deltaTime;
+                break;
+            }
+
+            case eState.kDiving:
+            {
+                // Quick visible movement
+                float t = (Time.time - m_fDiveStartTime) / m_fDiveTime;
+                t = Mathf.Clamp01(t);
+
+                transform.position = Vector3.Lerp(m_vDiveStartPos, m_vDiveEndPos, t);
+
+                // Reuse m_fDiveStartTime as recovery start time
+                if (t >= 1.0f)
+                {
+                    m_nState = eState.kRecovering;
+                    m_fDiveStartTime = Time.time;
+                }
+                break;
+            }
+
+            case eState.kRecovering:
+            {
+                // No movement during recovery
+                if ((Time.time - m_fDiveStartTime) >= m_fDiveRecoveryTime)
+                {
+                    m_nState = eState.kMoveSlow;
+                    m_fSpeed = 0.0f;
+                }
+                break;
+            }
+        }
+    }
 }
